@@ -2,7 +2,7 @@
 FROM node:22-alpine AS fe
 WORKDIR /fe
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install --no-fund --no-audit
+RUN npm install --no-fund --no-audit --registry=https://registry.npmmirror.com
 COPY frontend/ ./
 RUN npm run build
 
@@ -10,9 +10,9 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 TZ=Asia/Shanghai
-RUN pip install --no-cache-dir "pip<24.1"
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple "pip<24.1"
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 COPY backend/app ./app
 COPY --from=fe /fe/dist ./static
 VOLUME /app/data

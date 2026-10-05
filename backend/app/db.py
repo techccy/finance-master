@@ -15,6 +15,7 @@ def get_conn() -> sqlite3.Connection:
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA foreign_keys=ON")
     return _conn
 
 
@@ -30,11 +31,27 @@ def db():
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS watchlist (
-    code TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
     name TEXT NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('stock','etf','fund')),
-    created_at TEXT DEFAULT (datetime('now','localtime'))
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (user_id, code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 -- 股票/ETF 前复权收盘价
 CREATE TABLE IF NOT EXISTS kline (
@@ -83,5 +100,26 @@ CREATE TABLE IF NOT EXISTS meta (
 
 
 def init_db():
+    """建表；若存在旧版单用户 watchlist（无 user_id 列）则重命名留待迁移"""
     with db() as conn:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
+        if cols and "user_id" not in cols:
+            conn.execute("DROP TABLE IF EXISTS _watchlist_old")
+            conn.execute("ALTER TABLE watchlist RENAME TO _watchlist_old")
         conn.executescript(SCHEMA)
+
+
+def finalize_migration(admin_id: int):
+    """把旧版 watchlist 数据迁移给首个管理员，然后清理旧表"""
+    with db() as conn:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='_watchlist_old'").fetchone()
+        if not exists:
+            return
+        rows = conn.execute("SELECT code,name,type,created_at FROM _watchlist_old").fetchall()
+        for r in rows:
+            conn.execute("INSERT OR IGNORE INTO watchlist(user_id,code,name,type,created_at) VALUES(?,?,?,?,?)",
+                         (admin_id, r["code"], r["name"], r["type"], r["created_at"]))
+        conn.execute("DROP TABLE _watchlist_old")
+        if rows:
+            print(f"[migrate] 已将 {len(rows)} 条旧自选数据迁移给 user#{admin_id}")

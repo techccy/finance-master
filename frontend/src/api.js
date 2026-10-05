@@ -1,9 +1,14 @@
 export async function api(path, opts) {
   const r = await fetch(`/api${path}`, opts)
   if (!r.ok) {
+    if (r.status === 401 && path !== '/login' && path !== '/me') {
+      window.dispatchEvent(new Event('auth:logout'))
+    }
     let msg = `HTTP ${r.status}`
     try { msg = (await r.json()).detail || msg } catch {}
-    throw new Error(msg)
+    const err = new Error(msg)
+    err.status = r.status
+    throw err
   }
   return r.json()
 }

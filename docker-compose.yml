@@ -8,4 +8,6 @@ services:
       - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123   # 部署到服务器时请修改
     restart: unless-stopped

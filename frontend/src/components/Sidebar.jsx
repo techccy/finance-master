@@ -3,7 +3,7 @@ import { api, TYPE_LABEL } from '../api.js'
 
 const badge = { stock: '#c0392b', etf: '#d35400', fund: '#1f6feb' }
 
-export default function Sidebar({ list, selected, onToggle, onRemove, onAdd, onRefresh, syncing }) {
+export default function Sidebar({ list, selected, onToggle, onRemove, onAdd, onRefresh, syncing, isAdmin }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -58,9 +58,13 @@ export default function Sidebar({ list, selected, onToggle, onRemove, onAdd, onR
         ))}
       </div>
       <div style={{ padding: 12, borderTop: '1px solid #eef0f3' }}>
-        <button onClick={onRefresh} style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: '1px solid #d0d5dd', background: '#f9fafb', cursor: 'pointer', fontSize: 13 }}>
-          {syncing ? '后台刷新中…' : '立即刷新数据'}
-        </button>
+        {isAdmin ? (
+          <button onClick={onRefresh} style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: '1px solid #d0d5dd', background: '#f9fafb', cursor: 'pointer', fontSize: 13 }}>
+            {syncing ? '后台刷新中…' : '立即刷新数据'}
+          </button>
+        ) : (
+          <div style={{ fontSize: 12, color: '#999', textAlign: 'center' }}>数据每日收盘后自动更新</div>
+        )}
       </div>
     </aside>
   )
