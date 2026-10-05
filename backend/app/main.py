@@ -52,14 +52,29 @@ def _set_session_cookie(resp: Response, token: str):
 
 
 def ensure_admin():
-    """首次启动自动创建管理员；处理旧版 watchlist 迁移"""
+    """首次启动自动创建管理员；环境变量指定密码时每次启动同步；处理旧版 watchlist 迁移"""
+    env_user = os.environ.get("ADMIN_USERNAME", "admin")
+    env_pw = os.environ.get("ADMIN_PASSWORD")
     with db() as conn:
-        row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        row = conn.execute(
+            "SELECT id, username, password_hash FROM users WHERE is_admin=1 ORDER BY id LIMIT 1"
+        ).fetchone() or conn.execute(
+            "SELECT id, username, password_hash FROM users ORDER BY id LIMIT 1"
+        ).fetchone()
     if row:
         finalize_migration(row["id"])
+        # ADMIN_PASSWORD 已设置时，以环境变量为准同步管理员用户名/密码
+        # 注意：这会覆盖管理员在页面上修改过的密码
+        if env_pw and (row["username"] != env_user
+                       or not auth.verify_password(env_pw, row["password_hash"])):
+            with db() as conn:
+                conn.execute("UPDATE users SET username=?, password_hash=? WHERE id=?",
+                             (env_user, auth.hash_password(env_pw), row["id"]))
+            auth.purge_user_sessions(row["id"])
+            log.info("已按环境变量同步管理员账号 username=%s", env_user)
         return
-    username = os.environ.get("ADMIN_USERNAME", "admin")
-    password = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(10)
+    username = env_user
+    password = env_pw or secrets.token_urlsafe(10)
     with db() as conn:
         cur = conn.execute("INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)",
                            (username, auth.hash_password(password)))
@@ -341,6 +356,37 @@ def api_search(q: str):
         return data_fetch.search(q.strip())
     except Exception as e:
         raise HTTPException(502, f"搜索失败: {e}")
+
+
+@app.get("/api/quote")
+def api_quote(codes: str, types: str, user=Depends(current_user)):
+    """搜索结果批量实时行情（不写入数据库）"""
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    type_list = [t.strip() for t in types.split(",") if t.strip()]
+    if not code_list or len(code_list) != len(type_list):
+        raise HTTPException(400, "codes/types 数量不匹配")
+    if len(code_list) > 20:
+        raise HTTPException(400, "一次最多 20 个标的")
+    if any(t not in ("stock", "etf", "fund") for t in type_list):
+        raise HTTPException(400, "type 必须是 stock/etf/fund")
+    try:
+        return data_fetch.fetch_quotes([{"code": c, "type": t} for c, t in zip(code_list, type_list)])
+    except Exception as e:
+        raise HTTPException(502, f"行情获取失败: {e}")
+
+
+@app.get("/api/preview")
+def api_preview(code: str, type: str, user=Depends(current_user)):
+    """搜索预览：单标的近半年净值/价格曲线（不入库）"""
+    if type not in ("stock", "etf", "fund"):
+        raise HTTPException(400, "type 必须是 stock/etf/fund")
+    try:
+        pts = data_fetch.fetch_preview(code.strip(), type)
+    except Exception as e:
+        raise HTTPException(502, f"曲线获取失败: {e}")
+    if not pts:
+        raise HTTPException(404, f"{code} 无历史数据")
+    return {"code": code, "type": type, "points": [[d, v] for d, v in pts]}
 
 
 @app.post("/api/watchlist")

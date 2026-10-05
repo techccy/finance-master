@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { api } from '../api.js'
+import { T } from '../theme.js'
 
 export default function PasswordModal({ onClose }) {
   const [oldPw, setOldPw] = useState('')
@@ -19,23 +20,23 @@ export default function PasswordModal({ onClose }) {
     } catch (e2) { setErr(e2.message) }
   }
 
-  const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }
-  const input = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 8, border: '1px solid #d0d5dd', fontSize: 14, marginBottom: 12 }
+  const overlay = { position: 'fixed', inset: 0, background: T.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }
+  const input = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: 14, marginBottom: 12, outline: 'none' }
 
   return (
     <div style={overlay} onClick={onClose}>
       <form onClick={e => e.stopPropagation()} onSubmit={submit}
-        style={{ width: 320, background: '#fff', borderRadius: 12, padding: '26px 26px 22px', boxShadow: '0 12px 48px rgba(0,0,0,.18)' }}>
+        style={{ width: 320, background: T.panel, borderRadius: 12, padding: '26px 26px 22px', border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>修改密码</div>
-        {ok ? <div style={{ color: '#1e8e3e', fontSize: 14 }}>已修改 ✓</div> : (
+        {ok ? <div style={{ color: T.down, fontSize: 14 }}>已修改 ✓</div> : (
           <>
             <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="原密码" autoFocus style={input} />
             <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密码（至少 4 位）" style={input} />
             <input type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)} placeholder="确认新密码" style={input} />
-            {err && <div style={{ color: '#c0392b', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+            {err && <div style={{ color: T.up, fontSize: 13, marginBottom: 10 }}>{err}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', cursor: 'pointer', fontSize: 14 }}>取消</button>
-              <button style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1f6feb', color: '#fff', cursor: 'pointer', fontSize: 14 }}>确定</button>
+              <button type="button" onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.panel2, color: T.muted, cursor: 'pointer', fontSize: 14 }}>取消</button>
+              <button style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: T.accent, color: T.accentText, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>确定</button>
             </div>
           </>
         )}

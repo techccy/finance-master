@@ -9,5 +9,5 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123   # 部署到服务器时请修改
+      - ADMIN_PASSWORD=admin123   # 每次启动都会以此同步管理员密码（会覆盖页面上改过的密码）
     restart: unless-stopped
