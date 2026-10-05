@@ -1,0 +1,11 @@
+services:
+  observe:
+    build: .
+    container_name: observe-compare
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

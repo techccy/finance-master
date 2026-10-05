@@ -1,0 +1,87 @@
+"""SQLite 数据层"""
+import os
+import sqlite3
+from contextlib import contextmanager
+
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "app.db"))
+
+_conn = None
+
+
+def get_conn() -> sqlite3.Connection:
+    global _conn
+    if _conn is None:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA journal_mode=WAL")
+    return _conn
+
+
+@contextmanager
+def db():
+    conn = get_conn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS watchlist (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('stock','etf','fund')),
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+-- 股票/ETF 前复权收盘价
+CREATE TABLE IF NOT EXISTS kline (
+    code TEXT NOT NULL,
+    date TEXT NOT NULL,
+    close REAL NOT NULL,
+    PRIMARY KEY (code, date)
+);
+-- 场外基金复权净值（由累计收益率折算，起始=1）
+CREATE TABLE IF NOT EXISTS fund_nav (
+    code TEXT NOT NULL,
+    date TEXT NOT NULL,
+    nav REAL NOT NULL,
+    PRIMARY KEY (code, date)
+);
+-- 基金前十大持仓
+CREATE TABLE IF NOT EXISTS holdings (
+    code TEXT NOT NULL,
+    quarter TEXT NOT NULL,
+    stock_code TEXT,
+    stock_name TEXT NOT NULL,
+    ratio REAL NOT NULL,
+    PRIMARY KEY (code, quarter, stock_name)
+);
+-- 股票每日估值（PE-TTM / PB）
+CREATE TABLE IF NOT EXISTS valuation (
+    code TEXT NOT NULL,
+    date TEXT NOT NULL,
+    pe_ttm REAL,
+    pb REAL,
+    PRIMARY KEY (code, date)
+);
+-- 基金同类排名（近三月口径原始名次，越小越靠前）
+CREATE TABLE IF NOT EXISTS fund_rank (
+    code TEXT NOT NULL,
+    date TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    PRIMARY KEY (code, date)
+);
+-- 各类数据抓取时间戳 meta：key 如 holdings:110011
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+
+def init_db():
+    with db() as conn:
+        conn.executescript(SCHEMA)
