@@ -26,7 +26,7 @@ export default function PasswordModal({ onClose }) {
   return (
     <div style={overlay} onClick={onClose}>
       <form onClick={e => e.stopPropagation()} onSubmit={submit}
-        style={{ width: 320, background: T.panel, borderRadius: 12, padding: '26px 26px 22px', border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
+        style={{ width: 'min(320px, calc(100vw - 32px))', background: T.panel, borderRadius: 12, padding: '26px 26px 22px', border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>修改密码</div>
         {ok ? <div style={{ color: T.down, fontSize: 14 }}>已修改 ✓</div> : (
           <>

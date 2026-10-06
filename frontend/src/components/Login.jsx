@@ -23,8 +23,8 @@ export default function Login({ onLogin }) {
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.bg }}>
-      <form onSubmit={submit} style={{ width: 340, background: T.panel, borderRadius: 14, padding: '34px 32px', border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
+    <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.bg, padding: 16, boxSizing: 'border-box' }}>
+      <form onSubmit={submit} style={{ width: 'min(340px, 100%)', background: T.panel, borderRadius: 14, padding: '34px 32px', border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
         <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>📈 观测对比平台</div>
         <div style={{ fontSize: 13, color: T.faint, marginBottom: 22 }}>登录后查看你的自选</div>
         <label style={{ display: 'block', fontSize: 13, color: T.muted, marginBottom: 6 }}>用户名</label>

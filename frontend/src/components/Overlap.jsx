@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { T } from '../theme.js'
 
-export default function Overlap({ watchlist }) {
+export default function Overlap({ watchlist, isMobile }) {
   const funds = watchlist.filter(w => w.type === 'fund')
   const [sel, setSel] = useState([])
   const [data, setData] = useState(null)
@@ -17,7 +17,7 @@ export default function Overlap({ watchlist }) {
   }
 
   if (funds.length < 2)
-    return <div style={{ padding: 40, textAlign: 'center', color: T.faint }}>持仓重叠需要至少 2 只场外基金，请按 ⌘K 搜索添加</div>
+    return <div style={{ padding: 40, textAlign: 'center', color: T.faint }}>持仓重叠需要至少 2 只场外基金{isMobile ? '，点左上角 ☰ 后用 🔍 搜索添加' : '，请按 ⌘K 搜索添加'}</div>
 
   return (
     <div>
@@ -51,24 +51,26 @@ export default function Overlap({ watchlist }) {
               {p.common.length === 0 ? (
                 <div style={{ color: T.faint, fontSize: 13 }}>两只基金最近季报没有共同持仓</div>
               ) : (
+                <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead><tr style={{ color: T.muted, borderBottom: `1px solid ${T.border}` }}>
                     <th style={{ textAlign: 'left', padding: '6px' }}>共同持仓</th>
                     <th style={{ textAlign: 'right', padding: '6px' }}>{p.a_name}</th>
                     <th style={{ textAlign: 'right', padding: '6px' }}>{p.b_name}</th>
-                    <th style={{ textAlign: 'right', padding: '6px' }}>计入重叠</th>
+                    <th style={{ textAlign: 'right', padding: '6px', whiteSpace: 'nowrap' }}>计入重叠</th>
                   </tr></thead>
                   <tbody>
                     {p.common.map(h => (
                       <tr key={h.name} style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
                         <td style={{ padding: '7px 6px' }}>{h.name}</td>
-                        <td style={{ textAlign: 'right', padding: '7px 6px' }}>{h.a}%</td>
-                        <td style={{ textAlign: 'right', padding: '7px 6px' }}>{h.b}%</td>
-                        <td style={{ textAlign: 'right', padding: '7px 6px', fontWeight: 600 }}>{Math.min(h.a, h.b)}%</td>
+                        <td style={{ textAlign: 'right', padding: '7px 6px', whiteSpace: 'nowrap' }}>{h.a}%</td>
+                        <td style={{ textAlign: 'right', padding: '7px 6px', whiteSpace: 'nowrap' }}>{h.b}%</td>
+                        <td style={{ textAlign: 'right', padding: '7px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{Math.min(h.a, h.b)}%</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           ))}

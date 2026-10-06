@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { api, startDateOf, RANGE_PRESETS, TYPE_LABEL } from '../api.js'
 import { T, PALETTE, chartDark, fmtPct, cellColor } from '../theme.js'
 
-export default function Compare({ watchlist, selected }) {
+export default function Compare({ watchlist, selected, isMobile }) {
   const [range, setRange] = useState('1y')
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -27,7 +27,14 @@ export default function Compare({ watchlist, selected }) {
 
   useEffect(() => {
     // 图表容器随 data 条件渲染，这里在 data 到达、容器挂载后才初始化（只初始化一次）
-    if (!chartRef.current || chart.current) return
+    if (!chartRef.current) return
+    // 容器曾被卸载重建（如清空选择后重新勾选）：旧实例挂在失联 DOM 上，需重建
+    if (chart.current && chart.current.getDom() !== chartRef.current) {
+      chart._ro && chart._ro.disconnect()
+      chart.current.dispose()
+      chart.current = null
+    }
+    if (chart.current) return
     chart.current = echarts.init(chartRef.current)
     const ro = new ResizeObserver(() => chart.current && chart.current.resize())
     ro.observe(chartRef.current)
@@ -47,15 +54,18 @@ export default function Compare({ watchlist, selected }) {
       color: PALETTE,
       tooltip: { ...chartDark.tooltip, trigger: 'axis', valueFormatter: v => v == null ? '-' : fmtPct(v) },
       legend: { ...chartDark.legend, top: 0 },
-      grid: { left: 60, right: 30, top: 40, bottom: 60 },
+      grid: isMobile
+        ? { left: 44, right: 14, top: 40, bottom: 26 }
+        : { left: 60, right: 30, top: 40, bottom: 60 },
       xAxis: { type: 'category', data: data.dates, axisLabel: { color: T.faint }, axisLine: { lineStyle: { color: T.borderSoft } } },
       yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: T.faint }, splitLine: { lineStyle: { color: T.borderSoft } } },
       dataZoom: [
         { type: 'inside' },
-        { type: 'slider', height: 18, bottom: 12, borderColor: T.border, backgroundColor: T.panel2,
+        // 手机端隐藏 slider，inside zoom 原生支持触摸拖动/双指缩放
+        ...(!isMobile ? [{ type: 'slider', height: 18, bottom: 12, borderColor: T.border, backgroundColor: T.panel2,
           fillerColor: 'rgba(132,204,22,.18)', handleStyle: { color: T.panel2, borderColor: T.accent },
           dataBackground: { lineStyle: { color: T.border }, areaStyle: { color: T.borderSoft } },
-          textStyle: { color: T.faint } },
+          textStyle: { color: T.faint } }] : []),
       ],
       series: data.series.map(s => ({
         name: `${s.name}(${TYPE_LABEL[s.type]})`,
@@ -64,8 +74,8 @@ export default function Compare({ watchlist, selected }) {
         data: s.points.map(p => p[1]),
         markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: T.faint, type: 'dashed' }, data: [{ yAxis: 0 }] },
       })),
-    })
-  }, [data])
+    }, { lazyUpdate: true })
+  }, [data, isMobile])
 
   const nameOf = code => (watchlist.find(w => w.code === code) || {}).name || code
 
@@ -82,13 +92,13 @@ export default function Compare({ watchlist, selected }) {
         <span style={{ fontSize: 12.5, color: T.faint, marginLeft: 6 }}>曲线以区间起点为 0% 基准，股票前复权 / 基金分红再投</span>
       </div>
 
-      {selected.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: T.faint }}>在左侧勾选至少一个标的开始对比</div>}
+      {selected.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: T.faint }}>{isMobile ? '点左上角 ☰ 打开观测列表，勾选标的开始对比' : '在左侧勾选至少一个标的开始对比'}</div>}
       {err && <div style={{ padding: 20, color: T.up }}>加载失败：{err}</div>}
       {loading && <div style={{ padding: 12, color: T.faint }}>加载中…（首次添加标的需要后台同步几十秒）</div>}
 
       {data && (
         <>
-          <div ref={chartRef} style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, height: 420 }} />
+          <div ref={chartRef} style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, height: isMobile ? 300 : 420 }} />
           <div style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, marginTop: 16, padding: '14px 18px' }}>
             <div style={{ fontWeight: 700, marginBottom: 10 }}>区间指标（{data.start} ~ {data.end}）</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
@@ -98,8 +108,8 @@ export default function Compare({ watchlist, selected }) {
                   <th style={{ textAlign: 'right', padding: '8px 6px' }}>区间收益</th>
                   <th style={{ textAlign: 'right', padding: '8px 6px' }}>年化</th>
                   <th style={{ textAlign: 'right', padding: '8px 6px' }}>最大回撤</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px' }}>年化波动</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px' }}>夏普(2%)</th>
+                  {!isMobile && <th style={{ textAlign: 'right', padding: '8px 6px' }}>年化波动</th>}
+                  {!isMobile && <th style={{ textAlign: 'right', padding: '8px 6px' }}>夏普(2%)</th>}
                 </tr>
               </thead>
               <tbody>
@@ -109,15 +119,15 @@ export default function Compare({ watchlist, selected }) {
                     <td style={{ textAlign: 'right', padding: '9px 6px', color: cellColor(m.total_return), fontWeight: 600 }}>{fmtPct(m.total_return)}</td>
                     <td style={{ textAlign: 'right', padding: '9px 6px', color: cellColor(m.annualized) }}>{fmtPct(m.annualized)}</td>
                     <td style={{ textAlign: 'right', padding: '9px 6px', color: T.up }}>{m.max_drawdown.toFixed(2)}%</td>
-                    <td style={{ textAlign: 'right', padding: '9px 6px' }}>{m.volatility.toFixed(2)}%</td>
-                    <td style={{ textAlign: 'right', padding: '9px 6px' }}>{m.sharpe.toFixed(2)}</td>
+                    {!isMobile && <td style={{ textAlign: 'right', padding: '9px 6px' }}>{m.volatility.toFixed(2)}%</td>}
+                    {!isMobile && <td style={{ textAlign: 'right', padding: '9px 6px' }}>{m.sharpe.toFixed(2)}</td>}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-            {data.metrics.map(m => <InfoPanel key={m.code} metric={m} nameOf={nameOf} />)}
+            {data.metrics.map(m => <InfoPanel key={m.code} metric={m} nameOf={nameOf} isMobile={isMobile} />)}
           </div>
         </>
       )}
@@ -125,7 +135,7 @@ export default function Compare({ watchlist, selected }) {
   )
 }
 
-function InfoPanel({ metric, nameOf }) {
+function InfoPanel({ metric, nameOf, isMobile }) {
   const [info, setInfo] = useState(null)
   const [err, setErr] = useState('')
   useEffect(() => {
@@ -140,7 +150,7 @@ function InfoPanel({ metric, nameOf }) {
 
   if (metric.type === 'etf') return null
   return (
-    <div style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, padding: '14px 18px', minWidth: 320, flex: 1 }}>
+    <div style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, padding: '14px 18px', minWidth: isMobile ? 0 : 320, flex: 1, boxSizing: 'border-box' }}>
       <div style={{ fontWeight: 700, marginBottom: 8 }}>{metric.name} · {metric.type === 'stock' ? '估值分位' : '同类排名'}</div>
       {err && <div style={{ color: T.faint, fontSize: 12.5 }}>{err}</div>}
       {!err && !info && <div style={{ color: T.faint, fontSize: 12.5 }}>加载中…</div>}

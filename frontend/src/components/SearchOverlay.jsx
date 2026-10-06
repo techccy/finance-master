@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { api, TYPE_LABEL } from '../api.js'
 import { T, chartDark, TYPE_COLOR, fmtPct, cellColor } from '../theme.js'
 
-export default function SearchOverlay({ watchlist, onAdd, onClose }) {
+export default function SearchOverlay({ watchlist, onAdd, onClose, isMobile }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -81,26 +81,27 @@ export default function SearchOverlay({ watchlist, onAdd, onClose }) {
       position: 'fixed', inset: 0, zIndex: 200, background: T.overlay,
       backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      paddingTop: '9vh', animation: 'fadeIn .18s ease-out',
+      paddingTop: isMobile ? '3vh' : '9vh', animation: 'fadeIn .18s ease-out',
     }} onClick={onClose}>
-      <div style={{ width: 'min(880px, 92vw)', display: 'flex', flexDirection: 'column', minHeight: 0 }}
+      <div style={{ width: 'min(880px, 92vw)', display: 'flex', flexDirection: 'column', minHeight: 0, ...(isMobile ? { maxHeight: '94vh', overflowY: 'auto' } : {}) }}
         onClick={e => e.stopPropagation()}>
         <input ref={inputRef} autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKeyDown}
           placeholder="搜索股票 / ETF / 基金 — 代码、名称或拼音缩写"
           style={{
-            width: '100%', boxSizing: 'border-box', padding: '16px 20px', fontSize: 19, borderRadius: 12,
+            width: '100%', boxSizing: 'border-box', padding: '16px 20px', fontSize: isMobile ? 16 : 19, borderRadius: 12,
             border: `1px solid ${T.border}`, background: T.panel, color: T.text, outline: 'none',
             boxShadow: T.shadow,
           }} />
         <div style={{ fontSize: 12, color: T.faint, margin: '8px 4px 0', height: 16 }}>
           {searching ? '搜索中…' : q.trim() && !results.length ? '无结果' :
-            q.trim() ? `${results.length} 个结果 · ↑↓ 选择 · Enter 加入 · Esc 关闭` : '输入以搜索 · Enter 加入 · Esc 关闭'}
+            q.trim() ? (isMobile ? `${results.length} 个结果` : `${results.length} 个结果 · ↑↓ 选择 · Enter 加入 · Esc 关闭`)
+              : (isMobile ? '输入以搜索，点击结果加入列表' : '输入以搜索 · Enter 加入 · Esc 关闭')}
         </div>
 
-        <div style={{ display: 'flex', gap: 14, marginTop: 10, minHeight: 0, alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', gap: 14, marginTop: 10, minHeight: 0, alignItems: 'stretch', flexDirection: isMobile ? 'column' : 'row' }}>
           {/* 结果列表 */}
           <div ref={listRef} style={{
-            flex: '1 1 52%', maxHeight: '58vh', overflowY: 'auto', background: T.panel,
+            flex: '1 1 52%', maxHeight: isMobile ? '36vh' : '58vh', overflowY: 'auto', background: T.panel,
             border: `1px solid ${T.border}`, borderRadius: 12, boxShadow: T.shadow,
           }}>
             {results.map((r, i) => {
@@ -144,13 +145,13 @@ export default function SearchOverlay({ watchlist, onAdd, onClose }) {
 
           {/* 详情面板 */}
           <div style={{
-            flex: '1 1 48%', maxHeight: '58vh', overflowY: 'auto', background: T.panel,
+            flex: '1 1 48%', maxHeight: isMobile ? 'none' : '58vh', overflowY: 'auto', background: T.panel,
             border: `1px solid ${T.border}`, borderRadius: 12, boxShadow: T.shadow, padding: '16px 18px',
           }}>
             {!active && (
-              <div style={{ height: '100%', minHeight: 240, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: T.faint, fontSize: 13, textAlign: 'center' }}>
+              <div style={{ height: '100%', minHeight: isMobile ? 120 : 240, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: T.faint, fontSize: 13, textAlign: 'center' }}>
                 <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
-                ↑↓ 或悬停选择标的<br />这里会显示近半年走势，确认后加入
+                {isMobile ? '点击结果在这里查看走势，确认后加入' : <>↑↓ 或悬停选择标的<br />这里会显示近半年走势，确认后加入</>}
               </div>
             )}
             {active && (

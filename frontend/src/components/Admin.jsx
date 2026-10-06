@@ -5,7 +5,7 @@ import { T } from '../theme.js'
 const th = { textAlign: 'left', padding: '10px 12px', borderBottom: `2px solid ${T.border}`, fontSize: 13, color: T.muted }
 const td = { padding: '10px 12px', borderBottom: `1px solid ${T.borderSoft}`, fontSize: 13.5 }
 
-export default function Admin() {
+export default function Admin({ isMobile }) {
   const [users, setUsers] = useState([])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -52,13 +52,14 @@ export default function Admin() {
     <div style={{ maxWidth: 720 }}>
       <h2 style={{ margin: '0 0 16px', fontSize: 19 }}>👤 账号管理</h2>
       {(msg || err) && <div style={{ marginBottom: 12, fontSize: 13.5, color: err ? T.up : T.down }}>{err || msg}</div>}
-      <form onSubmit={create} style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <form onSubmit={create} style={{ display: 'flex', gap: 8, marginBottom: 20, flexDirection: isMobile ? 'column' : 'row' }}>
         <input value={username} onChange={e => setUsername(e.target.value)} placeholder="用户名"
           style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.panel, color: T.text, fontSize: 14, outline: 'none' }} />
         <input value={password} onChange={e => setPassword(e.target.value)} placeholder="密码（至少 4 位）"
           style={{ flex: 1.4, padding: '9px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.panel, color: T.text, fontSize: 14, outline: 'none' }} />
         <button style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: T.accent, color: T.accentText, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>新建账号</button>
       </form>
+      <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', background: T.panel, borderRadius: 10, overflow: 'hidden' }}>
         <thead><tr><th style={th}>用户名</th><th style={th}>角色</th><th style={th}>自选数</th><th style={th}>创建时间</th><th style={th}>操作</th></tr></thead>
         <tbody>
@@ -76,6 +77,7 @@ export default function Admin() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
