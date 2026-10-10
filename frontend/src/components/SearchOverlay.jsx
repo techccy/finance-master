@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { api, TYPE_LABEL } from '../api.js'
 import { T, chartDark, TYPE_COLOR, fmtPct, cellColor } from '../theme.js'
 
-export default function SearchOverlay({ watchlist, onAdd, onClose, isMobile }) {
+export default function SearchOverlay({ watchlist, onAdd, onOpenDetail, onClose, isMobile }) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -171,14 +171,23 @@ export default function SearchOverlay({ watchlist, onAdd, onClose, isMobile }) {
                 {preview?.loading && <div style={{ color: T.faint, fontSize: 13, padding: '20px 0' }}>曲线加载中…</div>}
                 {preview?.err && <div style={{ color: T.up, fontSize: 13, padding: '10px 0' }}>曲线获取失败：{preview.err}</div>}
                 {preview?.data && <PreviewChart points={preview.data.points} />}
-                <button onClick={() => !watched.has(active.code) && add(active)} disabled={watched.has(active.code)}
-                  style={{
-                    width: '100%', padding: '10px 0', marginTop: 12, borderRadius: 9, border: 'none', cursor: 'pointer',
-                    fontSize: 14, fontWeight: 600, background: watched.has(active.code) ? T.panel2 : T.accent,
-                    color: watched.has(active.code) ? T.faint : T.accentText,
-                  }}>
-                  {watched.has(active.code) ? '已在观测列表' : '加入观测列表并开始对比'}
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => !watched.has(active.code) && add(active)} disabled={watched.has(active.code)}
+                    style={{
+                      flex: 1, padding: '10px 0', marginTop: 12, borderRadius: 9, border: 'none', cursor: 'pointer',
+                      fontSize: 14, fontWeight: 600, background: watched.has(active.code) ? T.panel2 : T.accent,
+                      color: watched.has(active.code) ? T.faint : T.accentText,
+                    }}>
+                    {watched.has(active.code) ? '已在观测列表' : '加入观测列表'}
+                  </button>
+                  <button onClick={() => { onOpenDetail({ code: active.code, name: active.name, type: active.type }); onClose() }}
+                    style={{
+                      flex: 1, padding: '10px 0', marginTop: 12, borderRadius: 9, cursor: 'pointer',
+                      fontSize: 14, fontWeight: 600, background: T.panel2, color: T.text, border: `1px solid ${T.border}`,
+                    }}>
+                    查看详情 →
+                  </button>
+                </div>
               </>
             )}
           </div>

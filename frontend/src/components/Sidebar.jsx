@@ -3,7 +3,7 @@ import { TYPE_LABEL } from '../api.js'
 import { T } from '../theme.js'
 
 export default function Sidebar({ list, selected, onToggle, onRemove, onRefresh, syncing, isAdmin,
-  isMobile, open, onClose, username, onChangePassword, onLogout }) {
+  isMobile, open, onClose, username, onOpenDetail, onShowToken, onChangePassword, onLogout }) {
 
   const body = (
     <>
@@ -20,7 +20,12 @@ export default function Sidebar({ list, selected, onToggle, onRemove, onRefresh,
               onClick={e => e.stopPropagation()}
               style={{ marginRight: 8, accentColor: T.accent, width: 17, height: 17 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span onClick={e => { e.stopPropagation(); onOpenDetail(it) }} style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}
+                  title="查看详情">{it.name}</span>
+                <span onClick={e => { e.stopPropagation(); onOpenDetail(it) }}
+                  style={{ fontSize: 10.5, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 5, padding: '0 5px', cursor: 'pointer', flexShrink: 0 }}>详情</span>
+              </div>
               <div style={{ color: T.faint, fontSize: 11.5 }}>{it.code} · {TYPE_LABEL[it.type]}{it.last_date ? ` · 更新 ${it.last_date}` : ' · 待同步'}</div>
             </div>
             <span onClick={e => { e.stopPropagation(); onRemove(it.code) }} style={{ color: T.up, cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</span>
@@ -42,7 +47,8 @@ export default function Sidebar({ list, selected, onToggle, onRemove, onRefresh,
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 13 }}>
             <span style={{ color: T.muted }}>{isAdmin ? '🛡️' : '👤'} {username}</span>
             <span style={{ display: 'flex', gap: 12 }}>
-              <span onClick={onChangePassword} style={{ color: T.accent, cursor: 'pointer' }}>修改密码</span>
+              <span onClick={onShowToken} style={{ color: T.accent, cursor: 'pointer' }}>Token</span>
+              <span onClick={onChangePassword} style={{ color: T.accent, cursor: 'pointer' }}>改密码</span>
               <span onClick={onLogout} style={{ color: T.faint, cursor: 'pointer' }}>退出</span>
             </span>
           </div>

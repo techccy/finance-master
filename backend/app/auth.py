@@ -70,3 +70,35 @@ def purge_expired_sessions():
 def purge_user_sessions(user_id: int):
     with db() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+
+
+# ---------------- Agent API token ----------------
+
+def create_api_token(user_id: int) -> str:
+    """生成新 token（每人一个，重置即吊销旧 token）。明文只返回一次，库存 sha256"""
+    raw = "wbk_" + secrets.token_urlsafe(32)
+    h = hashlib.sha256(raw.encode()).hexdigest()
+    with db() as conn:
+        conn.execute("DELETE FROM api_tokens WHERE user_id=?", (user_id,))
+        conn.execute("INSERT INTO api_tokens(token_hash,user_id) VALUES(?,?)", (h, user_id))
+    return raw
+
+
+def get_api_user(raw_token: str):
+    """按 Bearer token 取用户；无效返回 None"""
+    if not raw_token:
+        return None
+    h = hashlib.sha256(raw_token.encode()).hexdigest()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT u.id, u.username, u.is_admin FROM api_tokens t "
+            "JOIN users u ON u.id = t.user_id WHERE t.token_hash=?", (h,)).fetchone()
+    if not row:
+        return None
+    return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"])}
+
+
+def get_api_token_info(user_id: int):
+    with db() as conn:
+        row = conn.execute("SELECT created_at FROM api_tokens WHERE user_id=?", (user_id,)).fetchone()
+    return {"exists": bool(row), "created_at": row["created_at"] if row else None}

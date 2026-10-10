@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import { api, startDateOf, RANGE_PRESETS, TYPE_LABEL } from '../api.js'
 import { T, PALETTE, chartDark, fmtPct, cellColor } from '../theme.js'
 
-export default function Compare({ watchlist, selected, isMobile }) {
+export default function Compare({ watchlist, selected, isMobile, onOpenDetail }) {
   const [range, setRange] = useState('1y')
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -127,7 +127,7 @@ export default function Compare({ watchlist, selected, isMobile }) {
             </table>
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-            {data.metrics.map(m => <InfoPanel key={m.code} metric={m} nameOf={nameOf} isMobile={isMobile} />)}
+            {data.metrics.map(m => <InfoPanel key={m.code} metric={m} nameOf={nameOf} isMobile={isMobile} onOpenDetail={onOpenDetail} />)}
           </div>
         </>
       )}
@@ -135,7 +135,7 @@ export default function Compare({ watchlist, selected, isMobile }) {
   )
 }
 
-function InfoPanel({ metric, nameOf, isMobile }) {
+function InfoPanel({ metric, nameOf, isMobile, onOpenDetail }) {
   const [info, setInfo] = useState(null)
   const [err, setErr] = useState('')
   useEffect(() => {
@@ -151,7 +151,13 @@ function InfoPanel({ metric, nameOf, isMobile }) {
   if (metric.type === 'etf') return null
   return (
     <div style={{ background: T.panel, borderRadius: 12, border: `1px solid ${T.border}`, padding: '14px 18px', minWidth: isMobile ? 0 : 320, flex: 1, boxSizing: 'border-box' }}>
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>{metric.name} · {metric.type === 'stock' ? '估值分位' : '同类排名'}</div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>
+        {metric.name} · {metric.type === 'stock' ? '估值分位' : '同类排名'}
+        {onOpenDetail && (
+          <span onClick={() => onOpenDetail({ code: metric.code, name: metric.name, type: metric.type })}
+            style={{ fontSize: 11, color: T.accent, marginLeft: 8, cursor: 'pointer', border: `1px solid ${T.accent}55`, borderRadius: 5, padding: '0 5px', fontWeight: 400 }}>详情</span>
+        )}
+      </div>
       {err && <div style={{ color: T.faint, fontSize: 12.5 }}>{err}</div>}
       {!err && !info && <div style={{ color: T.faint, fontSize: 12.5 }}>加载中…</div>}
       {info && metric.type === 'stock' && (

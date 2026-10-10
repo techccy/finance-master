@@ -91,6 +91,29 @@ CREATE TABLE IF NOT EXISTS fund_rank (
     rank INTEGER NOT NULL,
     PRIMARY KEY (code, date)
 );
+-- 全市场基金业绩快照（每日 18:20 刷新；r_* 为区间收益%，rank_*/cnt_* 为同类型内名次/总数）
+CREATE TABLE IF NOT EXISTS market_snapshot (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    ftype TEXT NOT NULL,
+    r_1d REAL, r_1w REAL, r_1m REAL, r_3m REAL, r_6m REAL,
+    r_1y REAL, r_3y REAL, r_ytd REAL,
+    rank_1m INTEGER, cnt_1m INTEGER,
+    rank_3m INTEGER, cnt_3m INTEGER,
+    rank_6m INTEGER, cnt_6m INTEGER,
+    rank_1y INTEGER, cnt_1y INTEGER,
+    rank_3y INTEGER, cnt_3y INTEGER,
+    rank_ytd INTEGER, cnt_ytd INTEGER,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_ftype ON market_snapshot(ftype);
+-- Agent API token（存 sha256，明文只在创建时返回一次）
+CREATE TABLE IF NOT EXISTS api_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 -- 各类数据抓取时间戳 meta：key 如 holdings:110011
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,

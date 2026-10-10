@@ -24,10 +24,19 @@ export const RANGE_PRESETS = [
   { key: '3y', label: '近3年', days: 1095 },
 ]
 
+// 详情页在对比页基础上追加更长区间
+export const DETAIL_RANGES = [
+  ...RANGE_PRESETS,
+  { key: '5y', label: '近5年', days: 1825 },
+  { key: 'all', label: '全部', days: 'all' },
+]
+
 export function startDateOf(preset) {
   const now = new Date()
-  const p = RANGE_PRESETS.find(x => x.key === preset)
+  const p = [...RANGE_PRESETS, { key: '5y', days: 1825 }].find(x => x.key === preset)
+  if (!p) return `${now.getFullYear() - 10}-01-01`
   if (p.days === 'ytd') return `${now.getFullYear()}-01-01`
+  if (p.days === 'all') return '1990-01-01'
   const d = new Date(now.getTime() - p.days * 86400000)
   return d.toISOString().slice(0, 10)
 }

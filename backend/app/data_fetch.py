@@ -44,9 +44,10 @@ def _tencent_sym(code: str, itype: str) -> str:
     return "sz" + code
 
 
-def fetch_kline(code: str, itype: str) -> list[tuple[str, float]]:
-    """腾讯前复权日K，自动分页取全量历史。返回 [(date, qfq_close)] 升序"""
-    sym = _tencent_sym(code, itype)
+def fetch_kline(code: str, itype: str, sym: str | None = None) -> list[tuple[str, float]]:
+    """腾讯前复权日K，自动分页取全量历史。返回 [(date, qfq_close)] 升序。
+    sym 可直接指定腾讯代码（指数如 sh000300），默认按 code/itype 推断。"""
+    sym = sym or _tencent_sym(code, itype)
     out: dict[str, float] = {}
     end = datetime.now().strftime("%Y-%m-%d")
     for _ in range(10):  # 最多 10 页 ≈ 15 年
@@ -139,6 +140,127 @@ def fetch_fund_rank(code: str) -> list[tuple[str, int]]:
             continue
         out.append((d, int(float(rank))))
     return sorted(out)
+
+
+# ---------------- 基金业绩基准（纯指数口径） ----------------
+
+# 指数名 → 腾讯代码。首版只收录主流宽基/红利/热门行业，映射表外的基准一律无基准线
+INDEX_MAP: dict[str, str] = {
+    "沪深300": "sh000300", "上证50": "sh000016", "中证500": "sh000905",
+    "中证800": "sh000906", "中证1000": "sh000852", "中证100": "sh000903",
+    "上证指数": "sh000001", "上证综指": "sh000001", "深证成指": "sz399001",
+    "创业板指": "sz399006", "科创50": "sh000688", "中证全指": "sh000985",
+    "中证红利": "sh000922", "上证红利": "sh000015",
+    "中证白酒": "sz399997", "中证医疗": "sz399989", "中证银行": "sz399986",
+    "中证军工": "sz399967", "中证证券": "sz399975", "中证消费": "sh000932",
+    "中证医药": "sh000933", "中证环保": "sh000827", "中证新能源汽车": "sz399976",
+}
+
+_bench_lock = threading.Lock()
+_bench_cache: dict[str, tuple[float, str | None, str | None]] = {}  # code -> (ts, sym, name)
+BENCH_TTL = 30 * 86400  # 基准很少变，缓存 30 天
+
+
+def _fetch_benchmark_text(code: str) -> str | None:
+    """天天基金 F10 基本概况页的业绩比较基准原文"""
+    url = f"https://fundf10.eastmoney.com/jbgk_{code}.html"
+    headers = {**UA, "Referer": f"http://fundf10.eastmoney.com/jbgk_{code}.html"}
+    r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
+    r.encoding = "utf-8"
+    m = re.search(r"业绩比较基准\s*</th>\s*<td[^>]*>([^<]+)", r.text) \
+        or re.search(r"业绩比较基准.{0,200}?<td[^>]*>([^<]+)</td>", r.text, re.S)
+    return m.group(1).strip() if m else None
+
+
+def resolve_benchmark(code: str) -> tuple[str, str] | None:
+    """解析业绩比较基准 → (腾讯指数代码, 指数名)。
+    规则：按 + 拆分段落，凡含"指数"字样的段落必须命中映射表；
+    全部命中且恰好命中 1 个指数才返回（多指数复合、含未收录指数 → 无基准线）。
+    "沪深300*95%+活期存款*5%" 这类单指数+现金腿视为纯指数。"""
+    hit = _bench_cache.get(code)
+    if hit and time.time() - hit[0] < BENCH_TTL:
+        return (hit[1], hit[2]) if hit[1] else None
+    with _bench_lock:
+        hit = _bench_cache.get(code)
+        if hit and time.time() - hit[0] < BENCH_TTL:
+            return (hit[1], hit[2]) if hit[1] else None
+        sym = name = None
+        try:
+            text = _fetch_benchmark_text(code)
+            if text:
+                matched: list[tuple[str, str]] = []
+                ok = True
+                for seg in re.split(r"[+＋]", text):
+                    if "指数" not in seg:
+                        continue  # 现金/存款类腿，忽略
+                    hits = [(k, v) for k, v in INDEX_MAP.items() if k in seg]
+                    if not hits:
+                        ok = False  # 存在映射表外的指数 → 放弃
+                        break
+                    matched.extend(hits)
+                if ok and len(matched) == 1:
+                    name, sym = matched[0]
+        except Exception as e:
+            log.warning("resolve_benchmark %s 失败: %s", code, e)
+        _bench_cache[code] = (time.time(), sym, name)
+    return (sym, name) if sym else None
+
+
+# ---------------- 全市场基金业绩快照 ----------------
+
+def _parse_rank(v) -> tuple[int, int] | tuple[None, None]:
+    """"123/456" 或 "123 | 456" → (123, 456)"""
+    if v is None or str(v).strip() in ("", "-", "--"):
+        return None, None
+    m = re.search(r"(\d+)\D+(\d+)", str(v))
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
+
+def _pct(v) -> float | None:
+    if v is None or str(v).strip() in ("", "-", "--"):
+        return None
+    try:
+        return round(float(v), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_market_snapshot() -> list[dict]:
+    """东财全市场开放式基金排行 → 快照行（含按类型分组的名次）。
+    akshare 该接口无同类排名列，名次自行计算：同 ftype 内按区间收益降序。"""
+    import akshare as ak
+    df = ak.fund_open_fund_rank_em(symbol="全部")
+    types = {f[0]: f[3] for f in _load_fund_list()}  # code -> 类型
+    periods = ["1m", "3m", "6m", "1y", "3y", "ytd"]
+    rows = []
+    for rec in df.to_dict("records"):
+        code = str(rec.get("基金代码") or "")
+        if not code:
+            continue
+        row = {"code": code, "name": str(rec.get("基金简称") or ""),
+               "ftype": types.get(code) or "其他",
+               "r_1d": _pct(rec.get("日增长率")), "r_1w": _pct(rec.get("近1周")),
+               "r_1m": _pct(rec.get("近1月")), "r_3m": _pct(rec.get("近3月")),
+               "r_6m": _pct(rec.get("近6月")), "r_1y": _pct(rec.get("近1年")),
+               "r_3y": _pct(rec.get("近3年")), "r_ytd": _pct(rec.get("今年来"))}
+        rows.append(row)
+    # 同类型内按各周期收益排名（收益缺失不参与）
+    for p in periods:
+        col = f"r_{p}"
+        by_type: dict[str, list[dict]] = {}
+        for row in rows:
+            if row[col] is not None:
+                by_type.setdefault(row["ftype"], []).append(row)
+        for group in by_type.values():
+            group.sort(key=lambda r: -r[col])
+            for i, row in enumerate(group, 1):
+                row[f"rank_{p}"], row[f"cnt_{p}"] = i, len(group)
+    for row in rows:
+        for p in periods:
+            row.setdefault(f"rank_{p}", None)
+            row.setdefault(f"cnt_{p}", None)
+    return rows
 
 
 # ---------------- 基金全量名单缓存 ----------------

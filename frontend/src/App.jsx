@@ -3,15 +3,21 @@ import { api } from './api.js'
 import Sidebar from './components/Sidebar.jsx'
 import Compare from './components/Compare.jsx'
 import Overlap from './components/Overlap.jsx'
+import Detail from './components/Detail.jsx'
+import Market from './components/Market.jsx'
+import Leaderboard from './components/Leaderboard.jsx'
 import Admin from './components/Admin.jsx'
 import Login from './components/Login.jsx'
 import PasswordModal from './components/PasswordModal.jsx'
+import TokenModal from './components/TokenModal.jsx'
 import SearchOverlay from './components/SearchOverlay.jsx'
 import { useIsMobile } from './useMediaQuery.js'
 import { T } from './theme.js'
 
 const TABS = [
   ['compare', '对比分析'],
+  ['rank', '排行榜'],
+  ['market', '基金超市'],
   ['overlap', '持仓重叠'],
 ]
 
@@ -20,8 +26,10 @@ export default function App() {
   const [watchlist, setWatchlist] = useState([])
   const [selected, setSelected] = useState([])
   const [tab, setTab] = useState('compare')
+  const [view, setView] = useState(null)          // {code, name, type} 详情视图
   const [syncing, setSyncing] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const [showToken, setShowToken] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
@@ -74,7 +82,7 @@ export default function App() {
     setSelected(sel => sel.includes(code) ? sel.filter(c => c !== code) : [...sel, code])
 
   const remove = async (code) => {
-    await api(`/watchlist/${code}`, { method: 'DELETE' })
+    await api(`/watchlist/${code}?confirm=true`, { method: 'DELETE' })
     setSelected(sel => sel.filter(c => c !== code))
     loadWatchlist()
   }
@@ -85,11 +93,14 @@ export default function App() {
     loadWatchlist()
   }
 
+  const openDetail = (item) => { setDrawerOpen(false); setView({ code: item.code, name: item.name, type: item.type }) }
+
   const refresh = async () => {
     setSyncing(true)
     try { await api('/refresh', { method: 'POST' }); setTimeout(loadWatchlist, 6000) } finally { setTimeout(() => setSyncing(false), 1500) }
   }
 
+  const switchTab = (k) => { setView(null); setTab(k) }
   const tabs = user.is_admin ? [...TABS, ['admin', '账号管理']] : TABS
 
   return (
@@ -107,12 +118,13 @@ export default function App() {
               <div style={{ flex: 1, fontWeight: 700, fontSize: 16 }}>📈 观测对比</div>
               <span onClick={() => setShowSearch(true)} style={{ fontSize: 18, cursor: 'pointer', padding: '2px 10px' }}>🔍</span>
             </div>
-            <div style={{ display: 'flex', borderTop: `1px solid ${T.borderSoft}` }}>
+            <div style={{ display: 'flex', overflowX: 'auto', borderTop: `1px solid ${T.borderSoft}` }}>
               {tabs.map(([k, label]) => (
-                <button key={k} onClick={() => setTab(k)} style={{
-                  flex: 1, padding: '10px 0', border: 'none', cursor: 'pointer', fontSize: 14,
-                  background: tab === k ? T.accent : 'transparent', color: tab === k ? T.accentText : T.muted,
-                  fontWeight: tab === k ? 600 : 400,
+                <button key={k} onClick={() => switchTab(k)} style={{
+                  flex: 1, padding: '10px 12px', border: 'none', cursor: 'pointer', fontSize: 14, whiteSpace: 'nowrap',
+                  background: (tab === k && !view) ? T.accent : 'transparent',
+                  color: (tab === k && !view) ? T.accentText : T.muted,
+                  fontWeight: (tab === k && !view) ? 600 : 400,
                 }}>{label}</button>
               ))}
             </div>
@@ -131,15 +143,17 @@ export default function App() {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {tabs.map(([k, label]) => (
-                <button key={k} onClick={() => setTab(k)} style={{
+                <button key={k} onClick={() => switchTab(k)} style={{
                   padding: '7px 18px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
-                  background: tab === k ? T.accent : 'transparent', color: tab === k ? T.accentText : T.muted,
-                  fontWeight: tab === k ? 600 : 400,
+                  background: (tab === k && !view) ? T.accent : 'transparent',
+                  color: (tab === k && !view) ? T.accentText : T.muted,
+                  fontWeight: (tab === k && !view) ? 600 : 400,
                 }}>{label}</button>
               ))}
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, fontSize: 13.5 }}>
               <span style={{ color: T.muted }}>{user.is_admin ? '🛡️' : '👤'} {user.username}</span>
+              <span onClick={() => setShowToken(true)} style={{ color: T.accent, cursor: 'pointer' }}>API Token</span>
               <span onClick={() => setShowPw(true)} style={{ color: T.accent, cursor: 'pointer' }}>修改密码</span>
               <span onClick={logout} style={{ color: T.faint, cursor: 'pointer' }}>退出</span>
             </div>
@@ -152,17 +166,28 @@ export default function App() {
           onRefresh={refresh} syncing={syncing} isAdmin={user.is_admin}
           isMobile={isMobile} open={drawerOpen} onClose={() => setDrawerOpen(false)}
           username={user.username}
+          onOpenDetail={openDetail}
+          onShowToken={() => { setDrawerOpen(false); setShowToken(true) }}
           onChangePassword={() => { setDrawerOpen(false); setShowPw(true) }}
           onLogout={() => { setDrawerOpen(false); logout() }} />
         <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '14px 14px' : '20px 28px' }}>
-          {tab === 'compare' && <Compare watchlist={watchlist} selected={selected} isMobile={isMobile} />}
-          {tab === 'overlap' && <Overlap watchlist={watchlist} isMobile={isMobile} />}
-          {tab === 'admin' && user.is_admin && <Admin isMobile={isMobile} />}
+          {view ? (
+            <Detail target={view} isMobile={isMobile} watchlist={watchlist} onAdd={add} onBack={() => setView(null)} />
+          ) : (
+            <>
+              {tab === 'compare' && <Compare watchlist={watchlist} selected={selected} isMobile={isMobile} onOpenDetail={openDetail} />}
+              {tab === 'rank' && <Leaderboard watchlist={watchlist} isMobile={isMobile} onOpenDetail={openDetail} />}
+              {tab === 'market' && <Market isMobile={isMobile} watchlist={watchlist} onAdd={add} onOpenDetail={openDetail} />}
+              {tab === 'overlap' && <Overlap watchlist={watchlist} isMobile={isMobile} />}
+              {tab === 'admin' && user.is_admin && <Admin isMobile={isMobile} />}
+            </>
+          )}
         </main>
       </div>
 
-      {showSearch && <SearchOverlay watchlist={watchlist} onAdd={add} onClose={() => setShowSearch(false)} isMobile={isMobile} />}
+      {showSearch && <SearchOverlay watchlist={watchlist} onAdd={add} onOpenDetail={openDetail} onClose={() => setShowSearch(false)} isMobile={isMobile} />}
       {showPw && <PasswordModal onClose={() => setShowPw(false)} />}
+      {showToken && <TokenModal onClose={() => setShowToken(false)} />}
     </div>
   )
 }
