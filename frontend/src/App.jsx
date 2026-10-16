@@ -26,6 +26,8 @@ export default function App() {
   const [watchlist, setWatchlist] = useState([])
   const [selected, setSelected] = useState([])
   const [tab, setTab] = useState('compare')
+  // keep-alive：tab 首次访问后保持挂载（display:none 隐藏），切走/进详情不丢内部状态
+  const [visited, setVisited] = useState({ compare: true })
   const [view, setView] = useState(null)          // {code, name, type} 详情视图
   const [syncing, setSyncing] = useState(false)
   const [showPw, setShowPw] = useState(false)
@@ -100,7 +102,7 @@ export default function App() {
     try { await api('/refresh', { method: 'POST' }); setTimeout(loadWatchlist, 6000) } finally { setTimeout(() => setSyncing(false), 1500) }
   }
 
-  const switchTab = (k) => { setView(null); setTab(k) }
+  const switchTab = (k) => { setView(null); setTab(k); setVisited(v => v[k] ? v : { ...v, [k]: true }) }
   const tabs = user.is_admin ? [...TABS, ['admin', '账号管理']] : TABS
 
   return (
@@ -171,16 +173,22 @@ export default function App() {
           onChangePassword={() => { setDrawerOpen(false); setShowPw(true) }}
           onLogout={() => { setDrawerOpen(false); logout() }} />
         <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '14px 14px' : '20px 28px' }}>
-          {view ? (
+          {/* 已访问过的 tab 保持挂载，仅用 display:none 隐藏；Admin 除外（保持即用即卸载） */}
+          {visited.compare && <div style={tab === 'compare' && !view ? undefined : { display: 'none' }}>
+            <Compare watchlist={watchlist} selected={selected} isMobile={isMobile} onOpenDetail={openDetail} />
+          </div>}
+          {visited.rank && <div style={tab === 'rank' && !view ? undefined : { display: 'none' }}>
+            <Leaderboard watchlist={watchlist} isMobile={isMobile} onOpenDetail={openDetail} />
+          </div>}
+          {visited.market && <div style={tab === 'market' && !view ? undefined : { display: 'none' }}>
+            <Market isMobile={isMobile} watchlist={watchlist} onAdd={add} onOpenDetail={openDetail} />
+          </div>}
+          {visited.overlap && <div style={tab === 'overlap' && !view ? undefined : { display: 'none' }}>
+            <Overlap watchlist={watchlist} isMobile={isMobile} />
+          </div>}
+          {tab === 'admin' && user.is_admin && !view && <Admin isMobile={isMobile} />}
+          {view && (
             <Detail target={view} isMobile={isMobile} watchlist={watchlist} onAdd={add} onBack={() => setView(null)} />
-          ) : (
-            <>
-              {tab === 'compare' && <Compare watchlist={watchlist} selected={selected} isMobile={isMobile} onOpenDetail={openDetail} />}
-              {tab === 'rank' && <Leaderboard watchlist={watchlist} isMobile={isMobile} onOpenDetail={openDetail} />}
-              {tab === 'market' && <Market isMobile={isMobile} watchlist={watchlist} onAdd={add} onOpenDetail={openDetail} />}
-              {tab === 'overlap' && <Overlap watchlist={watchlist} isMobile={isMobile} />}
-              {tab === 'admin' && user.is_admin && <Admin isMobile={isMobile} />}
-            </>
           )}
         </main>
       </div>
