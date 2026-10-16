@@ -12,9 +12,10 @@ def get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA busy_timeout=30000")
         _conn.execute("PRAGMA foreign_keys=ON")
     return _conn
 
@@ -92,12 +93,15 @@ CREATE TABLE IF NOT EXISTS fund_rank (
     PRIMARY KEY (code, date)
 );
 -- 全市场基金业绩快照（每日 18:20 刷新；r_* 为区间收益%，rank_*/cnt_* 为同类型内名次/总数）
+-- dd_* 为各区间最大回撤%（正值，来自蛋卷阶段业绩，单独后台任务刷新）
 CREATE TABLE IF NOT EXISTS market_snapshot (
     code TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     ftype TEXT NOT NULL,
     r_1d REAL, r_1w REAL, r_1m REAL, r_3m REAL, r_6m REAL,
     r_1y REAL, r_3y REAL, r_ytd REAL,
+    dd_1m REAL, dd_3m REAL, dd_6m REAL,
+    dd_1y REAL, dd_3y REAL, dd_ytd REAL,
     rank_1m INTEGER, cnt_1m INTEGER,
     rank_3m INTEGER, cnt_3m INTEGER,
     rank_6m INTEGER, cnt_6m INTEGER,
@@ -123,13 +127,19 @@ CREATE TABLE IF NOT EXISTS meta (
 
 
 def init_db():
-    """建表；若存在旧版单用户 watchlist（无 user_id 列）则重命名留待迁移"""
+    """建表；若存在旧版单用户 watchlist（无 user_id 列）则重命名留待迁移；
+    旧库 market_snapshot 缺 dd_* 列时补列"""
     with db() as conn:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if cols and "user_id" not in cols:
             conn.execute("DROP TABLE IF EXISTS _watchlist_old")
             conn.execute("ALTER TABLE watchlist RENAME TO _watchlist_old")
         conn.executescript(SCHEMA)
+        snap_cols = [r["name"] for r in conn.execute("PRAGMA table_info(market_snapshot)").fetchall()]
+        for p in ("1m", "3m", "6m", "1y", "3y", "ytd"):
+            col = f"dd_{p}"
+            if snap_cols and col not in snap_cols:
+                conn.execute(f"ALTER TABLE market_snapshot ADD COLUMN {col} REAL")
 
 
 def finalize_migration(admin_id: int):

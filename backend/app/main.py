@@ -1,6 +1,7 @@
 """基金、股票观测对比平台 - 后端服务"""
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -766,20 +767,30 @@ def api_leaderboard(start: str | None = None, end: str | None = None,
 
 # ---------------- API：基金超市 ----------------
 
-_MARKET_SORTS = ("r_1d", "r_1w", "r_1m", "r_3m", "r_6m", "r_1y", "r_3y", "r_ytd")
 _MARKET_PERIODS = ("1m", "3m", "6m", "1y", "3y", "ytd")
+# 通配筛选/排序字段：r_* 收益、dd_* 最大回撤（正值）、pct_* 同类排名百分位
+_MARKET_FIELDS = tuple(f"{pre}_{p}" for pre in ("r", "dd", "pct") for p in _MARKET_PERIODS) + ("r_1d", "r_1w")
+# 排序键 → SQL 表达式（pct 需要现算且 NULL 沉底）
+_MARKET_SORT_EXPR = {f: f for f in _MARKET_FIELDS}
+_MARKET_SORT_EXPR.update({
+    f"pct_{p}": f"(CASE WHEN cnt_{p} > 0 THEN rank_{p} * 100.0 / cnt_{p} END)"
+    for p in _MARKET_PERIODS
+})
 
 
 @app.get("/api/market")
-def api_market(fgroup: str | None = None, q: str | None = None, period: str = "1y",
+def api_market(request: Request,
+               fgroup: str | None = None, q: str | None = None, period: str = "1y",
                sort: str | None = None, order: str = "desc",
                min_ret: float | None = None, max_ret: float | None = None,
                pct_max: float | None = None, pct_min: float | None = None,
                page: int = 1, page_size: int = 20, user=Depends(current_user)):
-    """基金超市：全市场快照筛选（类型/收益区间/同类排名百分位/搜索/排序）"""
+    """基金超市：全市场快照筛选（类型/数值条件/搜索/排序）。
+    数值条件支持通配参数 {field}_min / {field}_max，field ∈ r_1m~r_ytd / dd_1m~dd_ytd / pct_1m~pct_ytd，
+    可任意多条叠加（AND）。旧参数 min_ret/max_ret（= r_{period} 区间）与 pct_min/pct_max 继续生效"""
     period = period if period in _MARKET_PERIODS else "1y"
     rcol, kcol, ccol = f"r_{period}", f"rank_{period}", f"cnt_{period}"
-    sort = sort if sort in _MARKET_SORTS else rcol
+    sort_expr = _MARKET_SORT_EXPR.get(sort or "", _MARKET_SORT_EXPR.get(f"r_{period}"))
     order = "ASC" if order.lower() == "asc" else "DESC"
 
     conds, params = [], []
@@ -801,6 +812,23 @@ def api_market(fgroup: str | None = None, q: str | None = None, period: str = "1
     if pct_max is not None:
         conds.append(f"({ccol} > 0 AND {kcol} * 100.0 / {ccol} <= ?)")
         params.append(pct_max)
+
+    # 通配数值条件：如 r_1m_min=5&dd_1y_max=15&pct_3y_max=20
+    for key, raw in request.query_params.items():
+        m = re.fullmatch(r"(r|dd|pct)_(1m|3m|6m|1y|3y|ytd)_(min|max)", key)
+        if not m:
+            continue
+        pre, p, op = m.group(1), m.group(2), ">=" if m.group(3) == "min" else "<="
+        try:
+            val = float(raw)
+        except ValueError:
+            continue
+        if pre == "pct":
+            conds.append(f"(cnt_{p} > 0 AND rank_{p} * 100.0 / cnt_{p} {op} ?)")
+        else:
+            conds.append(f"{pre}_{p} {op} ?")
+        params.append(val)
+
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
     page = max(1, page)
     page_size = min(100, max(5, page_size))
@@ -808,24 +836,42 @@ def api_market(fgroup: str | None = None, q: str | None = None, period: str = "1
     with db() as conn:
         total = conn.execute(f"SELECT COUNT(*) AS n FROM market_snapshot {where}", params).fetchone()["n"]
         rows = conn.execute(
-            f"SELECT code,name,ftype,{rcol} AS period_ret,{kcol} AS rank_n,{ccol} AS cnt_n "
-            f"FROM market_snapshot {where} "
-            f"ORDER BY {sort} IS NULL, {sort} {order}, code LIMIT ? OFFSET ?",
+            f"SELECT code,name,ftype,{rcol} AS period_ret,{kcol} AS rank_n,{ccol} AS cnt_n,"
+            + ",".join(f for f in _MARKET_FIELDS if f.startswith(("r_", "dd_"))) + ","
+            + ",".join(f"rank_{p},cnt_{p}" for p in _MARKET_PERIODS)
+            + f" FROM market_snapshot {where} "
+            f"ORDER BY {sort_expr} IS NULL, {sort_expr} {order}, code LIMIT ? OFFSET ?",
             params + [page_size, (page - 1) * page_size]).fetchall()
         u = conn.execute("SELECT MAX(updated_at) AS m FROM market_snapshot").fetchone()
-    return {"total": total, "page": page, "page_size": page_size, "updated": u["m"],
-            "items": [{"code": r["code"], "name": r["name"], "ftype": r["ftype"],
-                       "ret": r["period_ret"], "rank": r["rank_n"], "cnt": r["cnt_n"],
-                       "pct": round(r["rank_n"] * 100 / r["cnt_n"], 1)
-                              if r["rank_n"] and r["cnt_n"] else None} for r in rows]}
+    items = []
+    for r in rows:
+        it = {"code": r["code"], "name": r["name"], "ftype": r["ftype"],
+              "ret": r["period_ret"], "rank": r["rank_n"], "cnt": r["cnt_n"],
+              "pct": round(r["rank_n"] * 100 / r["cnt_n"], 1)
+                     if r["rank_n"] and r["cnt_n"] else None}
+        for f in _MARKET_FIELDS:
+            if f.startswith("r_"):
+                it[f] = r[f]
+            elif f.startswith("dd_"):
+                it[f] = r[f]
+            else:
+                p = f[4:]
+                it[f] = round(r[f"rank_{p}"] * 100 / r[f"cnt_{p}"], 1) \
+                    if r[f"rank_{p}"] and r[f"cnt_{p}"] else None
+        items.append(it)
+    return {"total": total, "page": page, "page_size": page_size, "updated": u["m"], "items": items}
 
 
 def refresh_market():
-    """全市场基金业绩快照日更（东财排行接口 2 万条，同类型内自算名次）"""
+    """全市场基金业绩快照日更（东财排行接口 2 万条，同类型内自算名次）。
+    重建快照时保留已回填的 dd_* 回撤列（由独立的回撤任务维护）"""
     try:
         rows = data_fetch.fetch_market_snapshot()
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        dd_cols = ("dd_1m", "dd_3m", "dd_6m", "dd_1y", "dd_3y", "dd_ytd")
         with db() as conn:
+            old_dd = {r["code"]: tuple(r[c] for c in dd_cols) for r in
+                      conn.execute(f"SELECT code,{','.join(dd_cols)} FROM market_snapshot").fetchall()}
             conn.execute("DELETE FROM market_snapshot")
             conn.executemany(
                 "INSERT OR REPLACE INTO market_snapshot(code,name,ftype,r_1d,r_1w,r_1m,r_3m,r_6m,"
@@ -837,7 +883,14 @@ def refresh_market():
                   r["rank_1m"], r["cnt_1m"], r["rank_3m"], r["cnt_3m"], r["rank_6m"], r["cnt_6m"],
                   r["rank_1y"], r["cnt_1y"], r["rank_3y"], r["cnt_3y"], r["rank_ytd"], r["cnt_ytd"],
                   now) for r in rows])
-        log.info("全市场快照已刷新：%d 条", len(rows))
+            kept = 0
+            for r in rows:
+                dd = old_dd.get(r["code"])
+                if dd and any(v is not None for v in dd):
+                    conn.execute(f"UPDATE market_snapshot SET {','.join(f'{c}=?' for c in dd_cols)} "
+                                 "WHERE code = ?", (*dd, r["code"]))
+                    kept += 1
+        log.info("全市场快照已刷新：%d 条，保留回撤 %d 条", len(rows), kept)
     except Exception as e:
         log.warning("全市场快照刷新失败: %s", e)
 
@@ -895,6 +948,16 @@ def api_refresh(user=Depends(require_admin)):
 
 # ---------------- 启动 ----------------
 
+def refresh_market_drawdown_job():
+    """每日回撤回填（蛋卷逐只拉取约 15 分钟，放后台线程避免占死调度池）"""
+    def _run():
+        try:
+            data_fetch.refresh_market_drawdown()
+        except Exception as e:
+            log.warning("回撤回填失败: %s", e)
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -903,14 +966,18 @@ def startup():
     sched = BackgroundScheduler(timezone="Asia/Shanghai")
     sched.add_job(lambda: _bg_refresh(force=False), CronTrigger(day_of_week="mon-fri", hour=18, minute=10))
     sched.add_job(refresh_market, CronTrigger(day_of_week="mon-fri", hour=18, minute=25))
+    sched.add_job(refresh_market_drawdown_job, CronTrigger(day_of_week="mon-fri", hour=18, minute=45))
     sched.add_job(purge_stale_orphans, CronTrigger(hour=4, minute=30))
     sched.start()
     _bg_refresh()
-    # 全市场快照为空时后台补一次（首次部署/换库）
+    # 全市场快照为空时后台补一次（首次部署/换库），补完顺带做首次回撤回填
     with db() as conn:
         n = conn.execute("SELECT COUNT(*) AS n FROM market_snapshot").fetchone()["n"]
     if n == 0:
-        threading.Thread(target=refresh_market, daemon=True).start()
+        def _first_snapshot():
+            refresh_market()
+            refresh_market_drawdown_job()
+        threading.Thread(target=_first_snapshot, daemon=True).start()
     log.info("启动完成，已触发首次数据同步")
 
 

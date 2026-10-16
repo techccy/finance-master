@@ -77,12 +77,14 @@ GET /api/leaderboard?start=2026-01-01
 
 ### 基金超市（全市场筛选）
 ```
-GET /api/market?fgroup=混合型&q=白酒&period=1y&sort=r_1y&order=desc&min_ret=30&pct_max=20&page=1&page_size=20
-→ {total, page, page_size, updated, items: [{code, name, ftype, ret, rank, cnt, pct}]}
+GET /api/market?fgroup=混合型&q=白酒&sort=r_1y&order=desc&dd_1y_max=15&r_1m_min=5&pct_1y_max=20&page=1&page_size=20
+→ {total, page, page_size, updated, items: [{code, name, ftype, ret, rank, cnt, pct, r_1m...r_ytd, dd_1m...dd_ytd, pct_1m...pct_ytd}]}
 ```
 - `fgroup`：类型前缀过滤，如 `股票型` / `混合型` / `债券型` / `指数型` / `QDII` / `FOF`
-- `period` + `sort`：排序周期（1m/3m/6m/1y/3y/ytd），sort 也可为任意收益列
-- `min_ret`/`max_ret`：区间收益%过滤；`pct_max`/`pct_min`：同类排名百分位（rank/cnt×100，越小越强）
+- `sort` + `order`：排序字段与方向，与筛选无关。字段 ∈ `r_1m~r_ytd`（区间收益%）/ `dd_1m~dd_ytd`（各周期最大回撤%，正值，越大回撤越深）/ `pct_1m~pct_ytd`（同类排名百分位）/ `r_1d` `r_1w`
+- 数值筛选为通配参数 `{field}_min` / `{field}_max`，field 同排序字段集，可任意多条叠加（AND），例：`r_1m_min=5&dd_1y_max=15&pct_3y_max=20`
+- 兼容旧参数：`min_ret`/`max_ret`（等价 `r_{period}` 区间，period 默认 1y）、`pct_min`/`pct_max`（同上）、`period`
+- 注意：dd_* 数据每日 18:45 后台回填，冷启动时可能暂缺（为 null）
 - 点进单只基金后用 `/api/detail` 查看详情
 
 ### 归一化对比（自选内多标的）

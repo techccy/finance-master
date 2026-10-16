@@ -31,6 +31,8 @@ warnings.filterwarnings("ignore")
 
 log = logging.getLogger("data")
 
+from .db import db  # noqa: E402  （仅 market_snapshot 回撤回填用）
+
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
 FULL_START = "2015-01-01"
 CST = timezone(timedelta(hours=8))
@@ -261,6 +263,78 @@ def fetch_market_snapshot() -> list[dict]:
             row.setdefault(f"rank_{p}", None)
             row.setdefault(f"cnt_{p}", None)
     return rows
+
+
+# ---------------- 蛋卷阶段业绩（各周期最大回撤） ----------------
+
+_DJ_DD_URL = "https://danjuanfunds.com/djapi/fundx/base/fund/achievement/{code}"
+_DJ_STAGE_MAP = {"近1月": "1m", "近3月": "3m", "近6月": "6m", "近1年": "1y", "近3年": "3y"}
+
+
+def fetch_fund_drawdown(code: str) -> dict | None:
+    """蛋卷阶段业绩 → {周期: 最大回撤%}（正值）。任何失败返回 None。
+    近1月~近3年来自 stage_performance_list，今年以来来自 annual_performance_list"""
+    try:
+        r = requests.get(_DJ_DD_URL.format(code=code), headers=UA, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json().get("data") or {}
+        out: dict[str, float] = {}
+        for rec in data.get("stage_performance_list") or []:
+            p = _DJ_STAGE_MAP.get(rec.get("period_time"))
+            v = rec.get("self_max_draw_down")
+            if p and v:
+                out[p] = float(str(v).replace("%", ""))
+        for rec in data.get("annual_performance_list") or []:
+            if rec.get("period_time") == "今年以来" and rec.get("self_max_draw_down"):
+                out["ytd"] = float(str(rec["self_max_draw_down"]).replace("%", ""))
+        return out or None
+    except Exception:
+        return None
+
+
+def refresh_market_drawdown(workers: int = 6, batch: int = 300) -> int:
+    """为快照全市场基金回填各周期最大回撤（约 2 万只，6 并发约 15 分钟）。
+    返回成功条数。注意：分小批量短事务写库并即时提交，避免长时间握住 SQLite 写锁
+    阻塞用户的写操作（加自选/登录等）"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    dd_cols = ("1m", "3m", "6m", "1y", "3y", "ytd")
+    with db() as conn:
+        codes = [r["code"] for r in conn.execute("SELECT code FROM market_snapshot").fetchall()]
+    log.info(f"回撤回填开始，共 {len(codes)} 只基金，{workers} 并发")
+
+    def work(code):
+        return code, fetch_fund_drawdown(code)
+
+    ok = done = 0
+    pending = []
+
+    def flush():
+        nonlocal ok
+        if not pending:
+            return
+        with db() as conn:
+            sets = ", ".join(f"dd_{p} = ?" for p in dd_cols)
+            conn.executemany(f"UPDATE market_snapshot SET {sets} WHERE code = ?",
+                             [(*[dd.get(p) for p in dd_cols], code) for code, dd in pending])
+        ok += len(pending)
+        pending.clear()
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(work, c) for c in codes]
+        for fut in as_completed(futures):
+            done += 1
+            code, dd = fut.result()
+            if dd:
+                pending.append((code, dd))
+            if len(pending) >= batch:
+                flush()
+            if done % 2000 == 0:
+                log.info(f"回撤回填进度 {done}/{len(codes)}")
+    flush()
+    log.info(f"回撤回填完成：{ok}/{len(codes)}")
+    return ok
 
 
 # ---------------- 基金全量名单缓存 ----------------
